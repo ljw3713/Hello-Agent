@@ -33,15 +33,27 @@ hello_agent/
 ├── tsconfig.json
 ├── .env.example
 ├── README.md
+├── resource/
+│   └── 唐诗三百首.txt
 ├── public/
-│   └── index.html
+│   ├── index.html
+│   ├── import.html
+│   └── image.html
 └── src/
     ├── server.ts
     ├── agent.ts
-    ├── aiClientInterface.ts
-    ├── geminiClient.ts
-    ├── deepseekClient.ts
     ├── logger.ts
+    ├── aiClients/
+    │   ├── aiClientInterface.ts
+    │   ├── geminiClient.ts
+    │   ├── geminiImageClient.ts
+    │   └── geminiUsageLogger.ts
+    ├── qdrant/
+    │   ├── embeddingClient.ts
+    │   ├── qdrantClient.ts
+    │   ├── qdrantImporter.ts
+    │   ├── textChunker.ts
+    │   └── types.ts
     └── tools/
         ├── toolInterface.ts
         ├── toolRegistry.ts
@@ -132,6 +144,21 @@ Qdrant 查询结果
 自动创建或复用 Qdrant collection
   ↓
 写入切片原文、metadata 和向量
+```
+
+项目内置了一个测试数据源：
+
+```text
+resource/唐诗三百首.txt
+```
+
+可以在导入页面上传这个 TXT 文件，用它初始化本地 Qdrant 测试集合。当前切片规则会按“三位数字编号 + 作者 + 冒号 + 诗名”的格式解析文本，每首诗作为一个 chunk 写入 Qdrant，payload 会包含：
+
+```text
+number
+author
+title
+content
 ```
 
 如果 collection 已存在，但向量维度和当前 embedding 输出维度不一致，导入会失败并在日志中说明原因。
