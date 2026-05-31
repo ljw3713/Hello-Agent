@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>导入 Qdrant</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: #1f2937;
+        background: #f6f7f9;
+      }
+
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 56px 0;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        line-height: 1.2;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #5b6472;
+      }
+
+      form {
+        display: grid;
+        gap: 12px;
+      }
+
+      textarea {
+        min-height: 240px;
+        resize: vertical;
+        padding: 14px;
+        border: 1px solid #d4d8df;
+        border-radius: 8px;
+        font: inherit;
+        line-height: 1.5;
+        background: white;
+      }
+
+      button {
+        width: fit-content;
+        padding: 10px 16px;
+        border: 0;
+        border-radius: 8px;
+        font: inherit;
+        color: white;
+        background: #2563eb;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.7;
+      }
+
+      section {
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid #dde1e7;
+      }
+
+      .row {
+        margin-bottom: 18px;
+      }
+
+      .label {
+        margin-bottom: 6px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #4b5563;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        padding: 14px;
+        border: 1px solid #e1e5eb;
+        border-radius: 8px;
+        background: white;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>导入 Qdrant</h1>
+      <p><a href="/">返回 Hello Agent</a></p>
+
+      <form id="import-form">
+        <input id="file-input" type="file" accept=".md,.txt,text/markdown,text/plain" />
+        <textarea id="import-content" placeholder="# 示例文档&#10;&#10;这里输入要导入向量库的 Markdown 或 TXT 内容"></textarea>
+        <button id="import-button" type="submit">导入</button>
+      </form>
+
+      <section>
+        <div class="row">
+          <div class="label">导入结果</div>
+          <pre id="import-result">尚未导入</pre>
+        </div>
+        <div class="row">
+          <div class="label">导入日志</div>
+          <pre id="import-logs">-</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const importForm = document.querySelector('#import-form');
+      const importContentInput = document.querySelector('#import-content');
+      const importButton = document.querySelector('#import-button');
+      const fileInput = document.querySelector('#file-input');
+
+      const setText = (selector, value) => {
+        document.querySelector(selector).textContent = value;
+      };
+
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+          return;
+        }
+
+        try {
+          importContentInput.value = await file.text();
+          setText('#import-result', JSON.stringify({
+            fileName: file.name,
+            fileSize: file.size,
+            loaded: true
+          }, null, 2));
+          setText('#import-logs', '文件已读取到输入框，点击导入写入 Qdrant。');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '未知错误';
+          setText('#import-result', `读取文件失败：${message}`);
+          setText('#import-logs', '-');
+        }
+      });
+
+      importForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const content = importContentInput.value.trim();
+        if (!content) {
+          return;
+        }
+
+        importButton.disabled = true;
+        importButton.textContent = '导入中...';
+
+        try {
+          const response = await fetch('/api/import', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ content })
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.detail || data.error || '导入失败');
+          }
+
+          setText('#import-result', JSON.stringify({
+            collectionName: data.collectionName,
+            sourceId: data.sourceId,
+            chunkCount: data.chunks.length,
+            embeddedChunkCount: data.embeddedChunks.length,
+            upsertedCount: data.upsertedCount,
+            metrics: data.metrics
+          }, null, 2));
+          setText('#import-logs', data.logs.join('\n'));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '未知错误';
+          setText('#import-result', message);
+          setText('#import-logs', '-');
+        } finally {
+          importButton.disabled = false;
+          importButton.textContent = '导入';
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemini 图片识别</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: #1f2937;
+        background: #f6f7f9;
+      }
+
+      main {
+        width: min(760px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 56px 0;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        line-height: 1.2;
+      }
+
+      p {
+        margin: 0 0 24px;
+        color: #5b6472;
+      }
+
+      form {
+        display: grid;
+        gap: 12px;
+      }
+
+      textarea {
+        min-height: 140px;
+        resize: vertical;
+        padding: 14px;
+        border: 1px solid #d4d8df;
+        border-radius: 8px;
+        font: inherit;
+        line-height: 1.5;
+        background: white;
+      }
+
+      button {
+        width: fit-content;
+        padding: 10px 16px;
+        border: 0;
+        border-radius: 8px;
+        font: inherit;
+        color: white;
+        background: #2563eb;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.7;
+      }
+
+      input[type="file"] {
+        padding: 12px;
+        border: 1px solid #d4d8df;
+        border-radius: 8px;
+        background: white;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+        max-height: 360px;
+        margin-top: 12px;
+        border: 1px solid #dde1e7;
+        border-radius: 8px;
+        background: white;
+        object-fit: contain;
+      }
+
+      section {
+        margin-top: 28px;
+        padding-top: 24px;
+        border-top: 1px solid #dde1e7;
+      }
+
+      .row {
+        margin-bottom: 18px;
+      }
+
+      .label {
+        margin-bottom: 6px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #4b5563;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        margin: 0;
+        padding: 14px;
+        border: 1px solid #e1e5eb;
+        border-radius: 8px;
+        background: white;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Gemini 图片识别</h1>
+      <p><a href="/">返回 Hello Agent</a></p>
+
+      <form id="image-form">
+        <input id="image-input" type="file" accept="image/*" />
+        <textarea id="prompt" placeholder="请输入识别需求，例如：请提取图片中的文字，并总结图片内容。"></textarea>
+        <button id="submit-button" type="submit">提交识别</button>
+      </form>
+
+      <img id="preview" alt="图片预览" hidden />
+
+      <section>
+        <div class="row">
+          <div class="label">识别结果</div>
+          <pre id="answer">尚未提交</pre>
+        </div>
+        <div class="row">
+          <div class="label">请求信息</div>
+          <pre id="meta">-</pre>
+        </div>
+        <div class="row">
+          <div class="label">执行日志</div>
+          <pre id="logs">-</pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector('#image-form');
+      const imageInput = document.querySelector('#image-input');
+      const promptInput = document.querySelector('#prompt');
+      const submitButton = document.querySelector('#submit-button');
+      const preview = document.querySelector('#preview');
+
+      let selectedImage = null;
+
+      const setText = (selector, value) => {
+        document.querySelector(selector).textContent = value;
+      };
+
+      imageInput.addEventListener('change', () => {
+        const file = imageInput.files?.[0];
+        selectedImage = file || null;
+
+        if (!file) {
+          preview.hidden = true;
+          preview.removeAttribute('src');
+          setText('#meta', '-');
+          return;
+        }
+
+        const previewUrl = URL.createObjectURL(file);
+        preview.src = previewUrl;
+        preview.hidden = false;
+        setText('#meta', JSON.stringify({
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          serverModeRule: file.size < 20 * 1024 * 1024 ? 'inlineData' : 'Files API'
+        }, null, 2));
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        if (!selectedImage) {
+          setText('#answer', '请先选择一张图片。');
+          return;
+        }
+
+        submitButton.disabled = true;
+        submitButton.textContent = '识别中...';
+        setText('#answer', '请求 Gemini 图片识别中...');
+        setText('#logs', '-');
+
+        try {
+          const base64Data = await readFileAsBase64(selectedImage);
+          const response = await fetch('/api/image-recognition', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              fileName: selectedImage.name,
+              mimeType: selectedImage.type,
+              sizeBytes: selectedImage.size,
+              base64Data,
+              prompt: promptInput.value
+            })
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.detail || data.error || '图片识别失败');
+          }
+
+          setText('#answer', data.answer);
+          setText('#meta', JSON.stringify({
+            uploadMode: data.uploadMode,
+            model: data.model,
+            fileName: data.fileName,
+            mimeType: data.mimeType,
+            sizeBytes: data.sizeBytes
+          }, null, 2));
+          setText('#logs', data.logs.join('\n'));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '未知错误';
+          setText('#answer', message);
+          setText('#logs', '-');
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = '提交识别';
+        }
+      });
+
+      function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.onload = () => {
+            const result = String(reader.result || '');
+            resolve(result.includes(',') ? result.split(',')[1] : result);
+          };
+
+          reader.onerror = () => {
+            reject(new Error('读取图片文件失败'));
+          };
+
+          reader.readAsDataURL(file);
+        });
+      }
+    </script>
+  </body>
+</html>
